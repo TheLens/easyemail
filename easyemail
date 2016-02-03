@@ -1,0 +1,139 @@
+#!/usr/bin/env python
+
+"""Useful for sending a large number of emails using a template."""
+
+import csv
+import sys
+import time
+
+from optparse import OptionParser
+
+from jinja2 import Template
+
+from mail import Mail
+
+
+class Send(object):
+    """Methods for forming and sending emails."""
+
+    def __init__(self, subject="", frm="", cc="",
+                 test_recipient="Thomas Thoren <tthoren@thelensnola.org>",
+                 csv_file="recipients.csv",
+                 template_file="template.html",
+                 is_test=False):
+        """Define class variables."""
+        self.subject = subject
+        self.frm = frm
+        self.cc = cc
+
+        self.test_recipient = test_recipient
+
+        self.template_file = template_file
+        self.csv_file = csv_file
+
+        self.is_test = is_test
+
+    def render_body(self, recipient_data):
+        """Render email for this recipient's data."""
+        with open(self.template_file) as f:
+            content = f.read().replace('\n', '')
+
+        template = Template(content)
+
+        return template.render(recipient_data)
+
+    def send(self):
+        """Loop through recipients CSV and sends emails."""
+        with open(self.csv_file, 'rb') as csvfile:
+            recipients = csv.DictReader(csvfile)
+
+            for row in recipients:
+                if not row.get('name'):
+                    print "Missing column \"name\"."
+                    break
+
+                if not row.get('email'):
+                    print "Missing column \"email\"."
+                    break
+
+                body = self.render_body(row)
+
+                if self.is_test:
+                    recipients = [self.test_recipient]
+                else:
+                    recipients = [row['email']]  # Assumes one recipient
+
+                print 'Sending email to ' + row['name'] + ' (' + \
+                    recipients[0] + ')...'
+                Mail(
+                    subject=self.subject,
+                    frm=self.frm,
+                    to=recipients,
+                    cc=self.cc,
+                    body=body
+                ).send_as_html()
+
+                time.sleep(10)  # Wait for 10 seconds
+
+
+def parse_cli(s):
+    """Parse command line."""
+    parser = OptionParser('usage: %prog [options]')
+    parser.add_option(
+        '-l', '--live',
+        action="store_true",
+        dest='live',
+        help='Send emails to their actual recipients.')
+    parser.add_option(
+        '-d', '--dry-run',
+        action="store_true",
+        dest='dryrun',
+        help='Test output by sending one email to test email address ' +
+             '(default: tthoren@thelensnola.org).')
+
+    (options, args) = parser.parse_args()
+
+    """Errors"""
+    # If no options supplied:
+    if len(sys.argv) < 2:
+        print 'ERROR: You must specify an option.\n'
+        parser.print_help()
+        return
+    # If any args:
+    if len(args) >= 1:
+        print 'ERROR: Not a valid argument.'
+        parser.print_help()
+        return
+    # If both options supplied:
+    if options.live and options.dryrun:
+        print 'ERROR: You cannot run a dry run and go live at the same time.'
+        parser.print_help()
+        return
+
+    """Command handling"""
+    if options.live:
+        print "You are about to send LIVE emails with the following options:"
+        print "  Subject:", s.subject
+        print "  From:", s.frm
+        print "  CC:", s.cc
+        print "  CSV file:", s.csv_file
+        print "  Template file:", s.template_file
+
+        response = raw_input('Are you sure you want to send these? (y/n) ')
+        if response.strip()[0].lower() == 'y':
+            s.send()
+
+        return
+
+    if options.dryrun:
+        print 'Sending TEST emails\n'
+        s.is_test = True
+        s.send()
+        return
+
+if __name__ == '__main__':
+    s = Send(
+        subject="Public records request from The Lens",
+        frm="Thomas Thoren <tthoren@thelensnola.org>",
+        cc='Thomas Thoren <tthoren@thelensnola.org>')
+    parse_cli(s)
